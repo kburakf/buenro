@@ -1,0 +1,57 @@
+version: "3"
+
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: buenro-mongodb
+    ports:
+      - "27018:27017"
+    command: ["--replSet", "rs0", "--bind_ip_all"]
+    volumes:
+      - mongodb_data:/data/db
+      - ./mongo-init.sh:/docker-entrypoint-initdb.d/mongo-init.sh:ro
+    restart: unless-stopped
+    networks:
+      - buenro-network
+
+  mongo-init:
+    image: mongo:latest
+    restart: "no"
+    depends_on:
+      - mongodb
+    command: >
+      /bin/bash -c "
+      sleep 10 && 
+      mongosh --host mongodb:27017 -u buenro -p buenro_password --authenticationDatabase admin --eval '
+      rs.initiate({
+        _id: \"rs0\",
+        members: [
+          {_id: 0, host: \"mongodb:27017\"}
+        ]
+      });
+      sleep(1000);
+      db = db.getSiblingDB(\"admin\");
+      db.runCommand({
+        setDefaultRWConcern: 1,
+        defaultWriteConcern: { w: 1 }
+      });
+      ' || echo 'Replica set may already be initialized'
+      "
+    networks:
+      - buenro-network
+  
+  redis:
+    image: redis:latest
+    container_name: buenro-redis
+    ports:
+      - "6380:6379"
+    restart: unless-stopped
+    networks:
+      - buenro-network
+
+networks:
+  buenro-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
